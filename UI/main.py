@@ -1,10 +1,11 @@
-from enum import Enum
 import logging
 import os
+import random
 import threading
 import time
 import tkinter
 from dataclasses import dataclass
+from enum import Enum
 from pathlib import Path
 from tkinter import filedialog
 
@@ -13,6 +14,7 @@ from CTkMessagebox import CTkMessagebox
 from PIL import Image
 
 from src.combination import validate_data_frame
+
 from .utils import FloatSpinbox
 
 customtkinter.set_appearance_mode("System")
@@ -52,25 +54,13 @@ class TextHandler(logging.Handler):
 class App(customtkinter.CTk):
     def __init__(self):
         super().__init__()
-        self.current_dir: Path = Path(__file__).resolve().parent.parent
-        self.assert_dir = self.current_dir / "assets"
-        # configure window
-        self.title("Robot Automation")
-        self.geometry(f"{1100}x{580}")
-        icon_file: Path = self.assert_dir / "site.ico"
-        if icon_file.exists():
-            try:
-                self.iconbitmap(icon_file)
-            except Exception as _:
-                pass
+        self.__basic_setup()
         # configure grid layout (4x4)
         self.grid_columnconfigure(1, weight=1)
         self.grid_columnconfigure((2, 3), weight=0)
         self.grid_rowconfigure(0, weight=1)
         self.stop = True
         self.filename = None
-        self.progressbar_1 = None
-        self.progress_label = None
         self.debug_mode_val = False
 
         self.sidebar_frame = SideBarFrame(self, width=140, corner_radius=0)
@@ -98,6 +88,19 @@ class App(customtkinter.CTk):
         logging.getLogger().addHandler(self.text_handler)
         logging.getLogger().setLevel(logging.INFO)
         self.textbox.grid_forget()
+
+    def __basic_setup(self):
+        self.current_dir: Path = Path(__file__).resolve().parent.parent
+        self.assert_dir = self.current_dir / "assets"
+        # configure window
+        self.title("Robot Automation")
+        self.geometry("1445x800")
+        icon_file: Path = self.assert_dir / "site.ico"
+        if icon_file.exists():
+            try:
+                self.iconbitmap(icon_file)
+            except Exception as _:
+                pass
 
     def set_progress(self):
         # self.file_upload.grid_forget()
@@ -167,7 +170,7 @@ class App(customtkinter.CTk):
         # this fucton save log from textbox to file
         current_dir_cwd = Path.cwd()
         log_path = current_dir_cwd / f"error_log-{time.time()}.txt"
-        with open(log_path, "w") as f:
+        with open(log_path, "w", encoding="utf-8") as f:
             f.write(self.textbox.get("1.0", "end"))
 
     def reset(self):
@@ -192,7 +195,7 @@ class SideBarFrame(customtkinter.CTkFrame):
         self.is_stop = False
 
     def setup_init(self):
-        self.grid_rowconfigure(8, weight=1)
+        self.grid_rowconfigure(10, weight=1)
         self.logo_label = customtkinter.CTkLabel(
             self,
             text="Home",
@@ -211,32 +214,48 @@ class SideBarFrame(customtkinter.CTkFrame):
 
         # label for delay
         self.delay_label = customtkinter.CTkLabel(
-            self, text="Delay in seconds:", anchor="w"
+            self,
+            text="Delay in seconds Range:",
+            anchor="w",
+            font=customtkinter.CTkFont(size=10, weight="bold"),
         )
         self.delay_label.grid(row=2, column=0, padx=20, pady=(10, 0))
-        self.delay_val = FloatSpinbox(self, step_size=1, start=30, end=999)
-        self.delay_val.grid(row=3, column=0, padx=20, pady=(10, 0))
+        self.delay_val_min = FloatSpinbox(self, step_size=1, start=20, end=999)
+        self.delay_val_min.grid(row=3, column=0, padx=20, pady=(10, 0))
+        self.delay_val_max = FloatSpinbox(self, step_size=1, start=20, end=999)
+        self.delay_val_max.set(37)
+        self.delay_val_max.grid(row=4, column=0, padx=20, pady=(10, 0))
+
+        self.timer_label = customtkinter.CTkLabel(
+            self,
+            text="Last Run Time",
+            font=customtkinter.CTkFont(size=20, weight="bold"),
+        )
+        self.timer_label.grid(row=8, column=0, padx=30, pady=(20, 10))
+        self.timer = Timer(self)
+        self.timer.grid(row=9, column=0, padx=30, pady=(20, 10))
+
         self.appearance_mode_label = customtkinter.CTkLabel(
             self, text="Appearance Mode:", anchor="w"
         )
 
-        self.appearance_mode_label.grid(row=9, column=0, padx=20, pady=(10, 0))
+        self.appearance_mode_label.grid(row=11, column=0, padx=20, pady=(10, 0))
         self.appearance_mode_optionemenu = customtkinter.CTkOptionMenu(
             self,
             values=["Light", "Dark", "System"],
             command=self.change_appearance_mode_event,
         )
-        self.appearance_mode_optionemenu.grid(row=10, column=0, padx=20, pady=(10, 10))
+        self.appearance_mode_optionemenu.grid(row=12, column=0, padx=20, pady=(10, 10))
         self.scaling_label = customtkinter.CTkLabel(
             self, text="UI Scaling:", anchor="w"
         )
-        self.scaling_label.grid(row=11, column=0, padx=20, pady=(10, 0))
+        self.scaling_label.grid(row=13, column=0, padx=20, pady=(10, 0))
         self.scaling_optionemenu = customtkinter.CTkOptionMenu(
             self,
             values=["80%", "90%", "100%", "110%", "120%"],
             command=self.change_scaling_event,
         )
-        self.scaling_optionemenu.grid(row=12, column=0, padx=20, pady=(10, 20))
+        self.scaling_optionemenu.grid(row=14, column=0, padx=20, pady=(10, 20))
         self.appearance_mode_optionemenu.set("System")
         self.scaling_optionemenu.set("100%")
 
@@ -244,7 +263,7 @@ class SideBarFrame(customtkinter.CTkFrame):
         self.play_or_pause = PlayPause.PLAY
         self.is_stop = False
         self.pause_play_btn = customtkinter.CTkButton(
-            self, text="play", command=self.on_click_play_pause, fg_color="green"
+            self, text="pause", command=self.on_click_play_pause, fg_color="green"
         )
         self.pause_play_btn.grid(
             row=6,
@@ -261,10 +280,12 @@ class SideBarFrame(customtkinter.CTkFrame):
         if self.play_or_pause == PlayPause.PLAY:
             self.play_or_pause = PlayPause.PAUSE
             self.pause_play_btn.configure(fg_color="#FFA500", text="pausing")
+            self.stop_btn.configure(state="disabled")
 
         else:
             self.play_or_pause = PlayPause.PLAY
-            self.pause_play_btn.configure(fg_color="green", text="play")
+            self.pause_play_btn.configure(fg_color="green", text="pause")
+            self.stop_btn.configure(state="normal")
 
     def on_click_stop(self):
         self.stop_btn.configure(
@@ -274,24 +295,33 @@ class SideBarFrame(customtkinter.CTkFrame):
         self.is_stop = True
 
     def reset_buttons(self):
+        self.debug_mode.deselect()
         self.stop_btn.destroy()
         self.pause_play_btn.destroy()
 
     def toggle_debug_mode(self):
         self.debug_mode_val = self.debug_mode.get()
         if not self.debug_mode_val:
-            self.master.textbox.grid_forget()
+            self.master.textbox.grid_forget()  # type: ignore
             return
 
         if self.debug_mode_val:
-            self.master.textbox.grid(
+            self.master.textbox.grid(  # type: ignore
                 row=0, column=1, padx=(20, 0), pady=(20, 0), sticky="nsew"
             )
 
     def get_delay_value(self) -> float:
-        if val := self.delay_val.get():
-            return val
-        return 30
+        min_val: float = 20.0
+        max_val: float = 37.0
+        min_val_get = self.delay_val_min.get()
+        max_val_get = self.delay_val_max.get()
+        if min_val_get:
+            min_val = min_val_get
+        if max_val_get:
+            max_val = max_val_get
+
+        # genreate random number between min and max
+        return random.uniform(min_val, max_val)
 
     def change_appearance_mode_event(self, new_appearance_mode: str):
         customtkinter.set_appearance_mode(new_appearance_mode)
@@ -307,13 +337,14 @@ class UserInputData:
     password: str
     game_url: str
     filename: Path
-    APP_object: App
+    app_object: App
 
 
 class UserInput(customtkinter.CTkFrame):
     def __init__(self, master: App, *args, **kwargs):
-        self.master: App = master
+        self.master: App = master  # type: ignore
         super().__init__(master=master, *args, **kwargs)
+        self.filename = None
         # inputs are
         # 1. user name
         # 2. password
@@ -375,6 +406,11 @@ class UserInput(customtkinter.CTkFrame):
 
         self.load_from_file()
 
+    def clear_entries(self):
+        self.user_name_entry.delete(0, tkinter.END)
+        self.password_entry.delete(0, tkinter.END)
+        self.game_url_entry.delete(0, tkinter.END)
+
     def load_from_file(self):
         current_dir_cwd = os.getcwd()
         credentials_path = Path(current_dir_cwd) / "credentials.txt"
@@ -383,6 +419,7 @@ class UserInput(customtkinter.CTkFrame):
         with open(credentials_path, "r") as f:
             lines = f.readlines()
             if len(lines) == 3:
+                self.clear_entries()
                 self.user_name_entry.insert(0, lines[0].strip())
                 self.password_entry.insert(0, lines[1].strip())
                 self.game_url_entry.insert(0, lines[2].strip())
@@ -394,9 +431,7 @@ class UserInput(customtkinter.CTkFrame):
         inputs["game_url"] = self.game_url_entry.get()
         error_message = ""
         for key, value in inputs.items():
-            if not value:
-                error_message += f"{key} cannot be empty\n"
-            elif value.strip() == "":
+            if not value or value.strip() == "":
                 error_message += f"{key} cannot be empty\n"
         if error_message:
             CTkMessagebox(title="Error", message=error_message, icon="cancel")
@@ -432,8 +467,8 @@ class UserInput(customtkinter.CTkFrame):
             user_name=self.user_name_entry.get(),
             password=self.password_entry.get(),
             game_url=self.game_url_entry.get(),
-            filename=self.filename,
-            APP_object=self.master,
+            filename=self.filename,  # type: ignore
+            app_object=self.master,
         )
 
     def save_to_file(self):
@@ -457,6 +492,66 @@ class UserInput(customtkinter.CTkFrame):
         # call main function
         # main()
         # check_csv_file_has_query_column()
+
+
+class Timer(customtkinter.CTkFrame):
+    def __init__(self, master, *args, **kwargs):
+        super().__init__(master=master, *args, **kwargs)
+        self.grid_columnconfigure(0, weight=1)
+        self.grid_rowconfigure(0, weight=1)
+        self.is_paused = False
+        self.is_stop = False
+        self.combination_process = 0
+        self.timer_label = customtkinter.CTkLabel(
+            self,
+            text="00:00:00",
+            font=customtkinter.CTkFont(size=20, weight="bold"),
+        )
+        self.timer_label.grid(row=0, column=0, padx=30, pady=(20, 10))
+        self.combination_process_label = customtkinter.CTkLabel(
+            self,
+            text=f"Combination Process : {self.combination_process}",
+            font=customtkinter.CTkFont(size=10, weight="bold"),
+        )
+        self.combination_process_label.grid(row=1, column=0, padx=30, pady=(20, 10))
+        self.start_time = 0
+
+    def update_timer(self):
+        if self.is_stop:
+            return
+        if self.is_paused is False:
+            self.start_time += 1  # increment by 1 second
+        hours, remainder = divmod(self.start_time, 3600)
+        minutes, seconds = divmod(remainder, 60)
+        self.timer_label.configure(
+            text=f"{int(hours):02d}:{int(minutes):02d}:{int(seconds):02d}"
+        )
+        self.combination_process_label.configure(
+            text=f"Combination Process : {self.combination_process}"
+        )
+        self.after(1000, self.update_timer)  # run every 1 second
+
+    # method are
+    # 1. start
+    # 2. pause
+    # 3. stop
+    # 4. reset
+    def start(self):
+        self._reset()
+        self.start_time = 0
+        self.combination_process = 0
+        self.update_timer()
+
+    def pause(self):
+        self.is_paused = not self.is_paused
+
+    def stop(self):
+        self.is_stop = True
+
+    def _reset(self):
+        self.timer_label.configure(text="00:00:00")
+        self.is_stop = False
+        self.is_paused = False
 
 
 if __name__ == "__main__":

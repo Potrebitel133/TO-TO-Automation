@@ -7,14 +7,13 @@ import traceback
 import urllib.parse
 from pathlib import Path
 
-from numpy import where
 import pandas as pd
 from bs4 import BeautifulSoup, NavigableString, ResultSet, Tag
 from requests import Response, Session
 
-from .combination import Status, get_status, load_combination
 from UI.main import PlayPause, UserInputData
 
+from .combination import Status, get_status, load_combination
 from .exception import (
     BetConfirmationFailed,
     BetPriceHigher,
@@ -283,6 +282,7 @@ def process_combination(  # pylint: disable=too-many-locals
         password (str): The password to verify the bet in the game
         combination_path (Path): The path of the combination file to update the status
     """
+    current_processed_combination: int = 0
     grouped_combination = combination[combination["Status"] == Status.PENDING.value]
     grouped_combination = grouped_combination["Combination"].tolist()
     grouped_combination = [
@@ -315,6 +315,7 @@ def process_combination(  # pylint: disable=too-many-locals
         combination.loc[combination["Combination"].isin(group), "Status"] = (
             Status.COMPLETED.value
         )
+        current_processed_combination += len(group)
         # update the file
         from .combination import Locking  # pylint: disable=import-outside-toplevel
 
@@ -322,8 +323,11 @@ def process_combination(  # pylint: disable=too-many-locals
             combination.to_excel(user_inputs.filename, index=False)
             # get_status
             completed, total = get_status(combination)
-            user_inputs.APP_object.update_progress(total, completed)
-            delay_time = user_inputs.APP_object.sidebar_frame.get_delay_value()
+            user_inputs.app_object.update_progress(total, completed)
+            user_inputs.app_object.sidebar_frame.timer.combination_process = (
+                current_processed_combination
+            )
+            delay_time = user_inputs.app_object.sidebar_frame.get_delay_value()
 
         logging.info(
             "Successfully completed the bet of a group and sleeping for %s seconds",
@@ -334,7 +338,6 @@ def process_combination(  # pylint: disable=too-many-locals
 
         is_stop(user_inputs)
 
-        # raise NotImplementedError("Not implemented yet")
         time.sleep(delay_time)
     logging.info("Successfully completed the bet of all the groups")
 
@@ -370,7 +373,7 @@ def accept_verify(session: Session, url: str, data: dict[str, str]) -> Response:
         with open(file_path, "a", encoding="utf-8") as file:
             file.write("<br>" * 2)
             file.write(str(confirm_talon_container))
-    except Exception as e:
+    except Exception as e:  # pylint: disable=broad-except
         logging.error("Unable to write the confirm talon container to the file %s", e)
     return response
 
@@ -430,16 +433,30 @@ def play_game_main(user_inputs: UserInputData):
     process_combination(session, user_inputs, combination)
 
 
-def to_pause(user_inputs: UserInputData):
-    status = user_inputs.APP_object.sidebar_frame.play_or_pause
+def to_pause(user_inputs: UserInputData) -> bool:
+    """This function used to check need to pause the code or not
+    Args:
+        user_inputs (UserInputData): The User inputs to play the game
+
+    Returns:
+        bool: if comment to pause return True else False
+    """
+    status = user_inputs.app_object.sidebar_frame.play_or_pause
     is_pause = status == PlayPause.PAUSE
     if is_pause:
-        user_inputs.APP_object.sidebar_frame.pause_play_btn.configure(text="paused")
+        user_inputs.app_object.sidebar_frame.pause_play_btn.configure(text="play")
     return is_pause
 
 
 def is_stop(user_inputs: UserInputData):
-    if user_inputs.APP_object.sidebar_frame.is_stop:
+    """This function used to stop the code by raise Error
+    Args:
+       user_inputs (UserInputData): The User inputs to play the game
+
+    Raises:
+        StopTheCode: This raise to stop the code
+    """
+    if user_inputs.app_object.sidebar_frame.is_stop:
         raise StopTheCode("Stop the code")
 
 
@@ -452,17 +469,19 @@ def main(user_inputs: UserInputData):
     try:
         print(user_inputs)
         logging.info("Starting the game")
+        user_inputs.app_object.sidebar_frame.timer.start()
         play_game_main(user_inputs)
-        user_inputs.APP_object.complete_progress()
+        user_inputs.app_object.complete_progress()
         logging.info("Successfully completed the game")
     except StopTheCode:
-        user_inputs.APP_object.add_error_label("code is stop")
+        user_inputs.app_object.add_error_label("code is stop")
     except Exception as e:  # pylint: disable=broad-except
         traceback.print_exc()
         logging.error("Traceback %s", traceback.format_exc())
         logging.error(e)
-        user_inputs.APP_object.save_error_log()
-        user_inputs.APP_object.add_error_label(str(e))
+        user_inputs.app_object.save_error_log()
+        user_inputs.app_object.add_error_label(str(e))
 
     finally:
-        user_inputs.APP_object.reset()
+        user_inputs.app_object.sidebar_frame.timer.stop()
+        user_inputs.app_object.reset()

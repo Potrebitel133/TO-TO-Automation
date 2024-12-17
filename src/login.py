@@ -1,8 +1,8 @@
 """This module is responsible for creating a session and logging in to the page"""
 
 import logging
-from pathlib import Path
 import pickle
+from pathlib import Path
 
 from bs4 import BeautifulSoup
 from requests import Response
@@ -11,14 +11,15 @@ from requests.sessions import Session
 from .exception import LoginFailed
 from .utils import get_error, get_soup
 
-def session_to_pickle(session: Session= None) -> Session|None:
+
+def session_to_pickle(session: Session | None = None) -> Session | None:
     """Save the session to a pickle file
 
     Args:
         session (Session): Session object to save
     """
     cwd = Path.cwd()
-    session_file = cwd / "session.pickle"    
+    session_file = cwd / "session.pickle"
     if session is None:
         if session_file.exists() is False:
             logging.error("No session file found")
@@ -31,19 +32,18 @@ def session_to_pickle(session: Session= None) -> Session|None:
         pickle.dump(session, file)
         logging.info("Session saved to pickle file")
         return session
-    
+
+
 def remove_pickle():
     """Remove the pickle file"""
     cwd = Path.cwd()
     session_file = cwd / "session.pickle"
     session_file.unlink(missing_ok=True)
-    
-    
+
+
 def create_session() -> Session:
     """Create a session and return it"""
-    session: Session | None = session_to_pickle()
-    if session is not None:
-        return session
+
     session: Session = Session()
     headers: dict[str, str] = {
         "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7",  # pylint: disable=line-too-long
@@ -83,7 +83,11 @@ def login_to_page(user_name: str, password: str) -> Session:
     Returns:
         Session: Session object with logged in status
     """
-    session: Session = create_session()
+    session: Session | None = session_to_pickle()
+    if session is not None:
+        return session
+
+    session = create_session()
 
     params: dict[str, str] = {
         "lang": "1",
@@ -105,4 +109,5 @@ def login_to_page(user_name: str, password: str) -> Session:
         logging.error("unable to login to the page %s", error)
         raise LoginFailed(error)
     logging.info("Successfully logged in")
-    return session
+
+    return session_to_pickle(session)  # # pyright: ignore
